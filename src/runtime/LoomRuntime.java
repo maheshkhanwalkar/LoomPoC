@@ -1,3 +1,5 @@
+package runtime;
+
 /**
  * Parallel runtime which takes advantage of the features provided by
  * Continuations implemented by Project Loom
@@ -15,5 +17,20 @@
  */
 public class LoomRuntime
 {
-    // TODO
+    // Singleton reference
+    private static LoomRuntime inst = new LoomRuntime();
+
+    /**
+     * TODO - actually do some initialisation here
+     */
+    private LoomRuntime() {}
+
+    /**
+     * Get the singleton instance of the runtime
+     * @return the runtime instance
+     */
+    public static LoomRuntime getInstance()
+    {
+        return inst;
+    }
 }

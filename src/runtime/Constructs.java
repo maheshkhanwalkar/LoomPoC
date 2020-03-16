@@ -1,6 +1,8 @@
+package runtime;
+
 /**
  * This class exposes various high-level parallelism constructs which is to be
- * used with the LoomRuntime for scheduling purposes.
+ * used with the runtime.LoomRuntime for scheduling purposes.
  *
  * The two main constructs that will be implemented are: finish and async, which
  * are described in detail, below.
@@ -43,5 +45,5 @@
  */
 public class Constructs
 {
-    // TODO
+    private static LoomRuntime runtime = LoomRuntime.getInstance();
 }
