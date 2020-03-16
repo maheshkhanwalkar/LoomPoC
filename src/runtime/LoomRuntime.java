@@ -3,6 +3,7 @@ package runtime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Parallel runtime which takes advantage of the features provided by
@@ -29,6 +30,9 @@ public class LoomRuntime
 
     // Waiting task set (self-map --> set)
     private Map<Task, Task> waiting = new ConcurrentHashMap<>();
+
+    // Shutdown flag
+    private AtomicBoolean shutdown = new AtomicBoolean(false);
 
     /**
      * Initialise the runtime, starting up all the initial worker
@@ -58,16 +62,38 @@ public class LoomRuntime
     }
 
     /**
+     * Shutdown the runtime
+     *
+     * This method will cause the worker threads to be interrupted
+     * and then joined, which will free the internal resources.
+     *
+     * However, any uncompleted tasks will be lost, so this method is
+     * only truly safe when all tasks have completed and the runtime
+     * is just sitting idle.
+     *
+     * @throws InterruptedException - the join on a worker thread was interrupted
+     */
+    public void shutdown() throws InterruptedException
+    {
+        // Interrupt the worker threads
+        for(Thread worker : workers)
+            worker.interrupt();
+
+        shutdown.set(true);
+
+        // Join on all the workers
+        for(Thread worker : workers)
+            worker.join();
+    }
+
+    /**
      * Dummy target for the worker thread
      */
     private void workerMain()
     {
         boolean loop = true;
 
-        // TODO also allow for a shutdown signal to tell this
-        //  thread to quit
-
-        while(loop) {
+        while(loop && !shutdown.get()) {
             loop = workerMainBody();
         }
     }
