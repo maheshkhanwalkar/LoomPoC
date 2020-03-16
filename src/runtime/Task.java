@@ -54,4 +54,27 @@ public class Task
         // The underlying continuation yielded
         status = TaskStatus.WAITING;
     }
+
+    public void updateStatus()
+    {
+        // TODO
+    }
+
+    /**
+     * Get the current status of the task
+     * @return the status
+     */
+    public TaskStatus getStatus()
+    {
+        return status;
+    }
+
+    /**
+     * Get the task's parent (if it exists)
+     * @return the parent, or null if it doesn't exist
+     */
+    public Task getParent()
+    {
+        return parent;
+    }
 }

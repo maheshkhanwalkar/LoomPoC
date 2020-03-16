@@ -45,5 +45,15 @@ package runtime;
  */
 public class Constructs
 {
-    private static LoomRuntime runtime = LoomRuntime.getInstance();
+    private static LoomRuntime runtime;
+
+    // FIXME: this needs a seed task parameter
+    public static void launchApp()
+    {
+        // Only one runtime can be launched at atime
+        if(runtime != null)
+            return;
+
+        runtime = new LoomRuntime();
+    }
 }
