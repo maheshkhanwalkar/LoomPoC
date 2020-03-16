@@ -26,19 +26,16 @@ public class LoomRuntime
     // Worker threads
     private List<Thread> workers = new ArrayList<>();
 
-    /**
-     * TODO - actually do some initialisation here
-     */
+    // TODO add a ready task queue -- which are tasks that are ready to run
+    // TODO add a waiting task queue -- tasks that are waiting on a condition
+
     private LoomRuntime()
     {
         int cores = Runtime.getRuntime().availableProcessors();
 
-        // FIXME: there needs to be a supporting Runnable which
-        //  handles pulling tasks off the shared queue and running them
-
         // Create the worker threads
         for(int i = 0; i < cores; i++)
-            workers.add(new Thread());
+            workers.add(new Thread(this::workerMain));
 
         // Start the worker threads
         for (Thread worker : workers)
@@ -52,5 +49,24 @@ public class LoomRuntime
     public static LoomRuntime getInstance()
     {
         return inst;
+    }
+
+    public void submit(Task task)
+    {
+        // TODO submit this to the queue
+    }
+
+    /**
+     * Main body for each worker thread within the runtime
+     *
+     * Each thread will attempt to pull a task off from the work
+     * queue, if possible, and then begin to run it.
+     *
+     * On the condition that there are no available tasks to execute,
+     * the worker thread will sleep until a task is added.
+     */
+    private void workerMain()
+    {
+        // TODO
     }
 }
