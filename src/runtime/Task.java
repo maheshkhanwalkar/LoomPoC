@@ -1,13 +1,10 @@
 package runtime;
 
-import java.util.LinkedList;
-import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class Task
 {
-    // TODO implement the creation of subtasks
-    // TODO support status updating from WAITING to READY
-
     // Underlying task representation
     private Continuation body;
 
@@ -15,7 +12,7 @@ public class Task
     private TaskStatus status;
 
     // Any subtasks that this task depends on
-    private List<Task> subTasks = new LinkedList<>();
+    private Queue<Task> subTasks = new ConcurrentLinkedQueue<>();
 
     // The parent task (if it exists)
     private Task parent;
@@ -32,7 +29,6 @@ public class Task
 
     /**
      * Execute the task
-     *
      */
     public void run()
     {
@@ -51,13 +47,56 @@ public class Task
             return;
         }
 
-        // The underlying continuation yielded
+        // The underlying continuation has yielded
         status = TaskStatus.WAITING;
     }
 
+    /**
+     * Update the task's status
+     *
+     * The task only becomes ready again once all of its children have finished.
+     * Therefore, this method should be called whenever a child task has a status update.
+     */
     public void updateStatus()
     {
-        // TODO
+        // Ensure all the subtasks have completed
+        for(Task child : subTasks)
+        {
+            if(child.status != TaskStatus.COMPLETED)
+                return;
+        }
+
+        // Every subtask has completed, so the parent task can now be
+        // rescheduled to run
+        status = TaskStatus.READY;
+    }
+
+    /**
+     * Creates a child task, adding it to its internal subtask list
+     * @param childBody - continuation body of the child
+     * @param waitImmediately - should the task begin waiting immediately
+     * @return the child
+     */
+    public Task createChild(Continuation childBody, boolean waitImmediately)
+    {
+        if(waitImmediately) {
+            status = TaskStatus.WAITING;
+        }
+
+        Task child = new Task(childBody);
+        child.parent = this;
+
+        subTasks.add(child);
+        return child;
+    }
+
+    /**
+     * Set the task's status
+     * @param status - new status
+     */
+    public void setStatus(TaskStatus status)
+    {
+        this.status = status;
     }
 
     /**
