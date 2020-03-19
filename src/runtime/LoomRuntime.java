@@ -30,6 +30,9 @@ public class LoomRuntime
     // Waiting task set (self-map --> set)
     private Map<Task, Task> waiting = new ConcurrentHashMap<>();
 
+    // Current task map
+    private Map<Long, Task> current = new ConcurrentHashMap<>();
+
     // Shutdown flag
     private AtomicBoolean shutdown = new AtomicBoolean(false);
 
@@ -76,12 +79,24 @@ public class LoomRuntime
     }
 
     /**
-     * Add a new task to the work queue
-     * @param task - task to add
+     * Setup the provided task as an async construct
+     *
+     * The async subtask will be associated with the currently executing
+     * parent task and will be added to the work queue.
+     *
+     * The parent task will then be returned to immediately, since the
+     * parent does not directly wait on the spawned async until it reaches the
+     * end of a finish scope (implicitly or explicitly)
+     *
+     * @param child - async subtask to setup
      */
-    public void submit(Task task)
+    public void setupAsync(Task child)
     {
-        tasks.offer(task);
+        long tid = Thread.currentThread().getId();
+        Task parent = current.get(tid);
+
+        parent.addChild(child);
+        tasks.offer(child);
     }
 
     /**
@@ -146,9 +161,15 @@ public class LoomRuntime
             return false;
         }
 
+        // Update the current map
+        long tid = Thread.currentThread().getId();
+        current.put(tid, task);
+
         // Run the task with this worker thread
         task.run();
         TaskStatus status = task.getStatus();
+
+        current.remove(tid);
 
         if(status == TaskStatus.COMPLETED)
         {

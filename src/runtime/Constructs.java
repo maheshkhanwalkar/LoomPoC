@@ -124,6 +124,7 @@ public class Constructs
      */
     public static void async(Runnable body)
     {
-        // TODO
+        Task async = new Task(new Continuation(SCOPE, body));
+        runtime.setupAsync(async);
     }
 }
