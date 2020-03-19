@@ -1,5 +1,6 @@
 # IntelliJ stuff
 .idea/
+out/
 *.iml
 
 

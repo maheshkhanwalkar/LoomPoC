@@ -1,9 +1,7 @@
 package runtime;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -27,7 +25,7 @@ public class LoomRuntime
     private List<Thread> workers = new ArrayList<>();
 
     // Task queue (ready-to-run)
-    private Queue<Task> tasks = new ConcurrentLinkedQueue<>();
+    private BlockingQueue<Task> tasks = new LinkedBlockingQueue<>();
 
     // Waiting task set (self-map --> set)
     private Map<Task, Task> waiting = new ConcurrentHashMap<>();
@@ -38,8 +36,8 @@ public class LoomRuntime
     // The initial task submitted
     private Task root;
 
-    // Waiting semaphore -- used to wait until the root task is done
-    private Semaphore sem = new Semaphore(1);
+    // Countdown latch -- used to wait until the root task is done
+    private CountDownLatch latch = new CountDownLatch(1);
 
     /**
      * Initialise the runtime, starting up all the initial worker
@@ -66,11 +64,6 @@ public class LoomRuntime
     {
         this.root = root;
         tasks.offer(root);
-        tasks.notifyAll();
-
-        // This will always succeed, since no other thread currently
-        // accesses the semaphore -- the blocking acquire() call is not needed
-        sem.tryAcquire();
     }
 
     /**
@@ -79,7 +72,7 @@ public class LoomRuntime
      */
     public void waitOnRoot() throws InterruptedException
     {
-        sem.acquire();
+        latch.await();
     }
 
     /**
@@ -89,7 +82,6 @@ public class LoomRuntime
     public void submit(Task task)
     {
         tasks.offer(task);
-        tasks.notifyAll();
     }
 
     /**
@@ -144,15 +136,13 @@ public class LoomRuntime
 
         try
         {
-            // Wait until there is a task in the queue -- and remove it
-            // from the queue
-            while((task = tasks.poll()) == null) {
-                tasks.wait();
-            }
+            // Take a task from the queue
+            //  Since this is a blocking queue, the call will *block* until the queue
+            //  becomes non-empty
+            task = tasks.take();
         }
         catch (InterruptedException e)
         {
-            e.printStackTrace();
             return false;
         }
 
@@ -163,10 +153,10 @@ public class LoomRuntime
         if(status == TaskStatus.COMPLETED)
         {
             // The root task has now completed
-            // Release the semaphore -- which will cause the waitOnRoot() call to return
+            // Decrement the latch's count -- which will cause the waitOnRoot() call to return
             if(task == root)
             {
-                sem.release();
+                latch.countDown();
                 return true;
             }
 
