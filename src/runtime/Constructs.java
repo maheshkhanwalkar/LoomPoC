@@ -67,4 +67,63 @@ public class Constructs
         runtime.waitOnRoot();
         runtime.shutdown();
     }
+
+    /**
+     * Spawn an async task to execute the body
+     *
+     * This call should only be executed within the launchApp { ... }
+     * scope, since the Loom Runtime needs to be initialised.
+     *
+     * The 'body' specified will be wrapped within a new task and will
+     * be scheduled to execute independently.
+     *
+     * One important point is that async {...} is always implicitly under
+     * a finish scope. The following example illustrates this rule:
+     *
+     * Paradigm #1
+     * async {
+     *     async {
+     *         [1]
+     *     }
+     *
+     *     [2]
+     * }
+     *
+     * Paradigm #2
+     * async {
+     *     finish {
+     *         async {
+     *            [1]
+     *         }
+     *
+     *         [2]
+     *     }
+     * }
+     *
+     * The implementation here treats Paradigm #1 and #2 as the same. This
+     * essentially simplifies task management, since parent tasks must always wait
+     * on their children to complete.
+     *
+     * Therefore, to truly represent Paradigm #1 with the current implementation,
+     * the innermost async task should be (manually) hoisted out:
+     *
+     * Paradigm #3
+     *
+     * async {
+     *     [2]
+     * }
+     *
+     * async {
+     *     [1]
+     * }
+     *
+     * This allows for the two async constructs to complete independently of each other,
+     * without any waiting on each other.
+     *
+     * @param body - body of the async task
+     */
+    public static void async(Runnable body)
+    {
+        // TODO
+    }
 }
