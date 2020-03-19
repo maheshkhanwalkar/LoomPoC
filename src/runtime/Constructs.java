@@ -46,14 +46,25 @@ package runtime;
 public class Constructs
 {
     private static LoomRuntime runtime;
+    private static final ContinuationScope SCOPE = new ContinuationScope("SCOPE");
 
-    // FIXME: this needs a seed task parameter
-    public static void launchApp()
+    /**
+     * Launch a new "application" to run on the runtime framework
+     * @param body - root body of the task
+     * @throws InterruptedException - if the wait-to-finish is interrupted
+     */
+    public static void launchApp(Runnable body) throws InterruptedException
     {
         // Only one runtime can be launched at atime
         if(runtime != null)
             return;
 
         runtime = new LoomRuntime();
+
+        Task task = new Task(new Continuation(SCOPE, body));
+
+        runtime.submitRoot(task);
+        runtime.waitOnRoot();
+        runtime.shutdown();
     }
 }

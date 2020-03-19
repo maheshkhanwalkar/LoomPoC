@@ -3,6 +3,7 @@ package runtime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -34,6 +35,12 @@ public class LoomRuntime
     // Shutdown flag
     private AtomicBoolean shutdown = new AtomicBoolean(false);
 
+    // The initial task submitted
+    private Task root;
+
+    // Waiting semaphore -- used to wait until the root task is done
+    private Semaphore sem = new Semaphore(1);
+
     /**
      * Initialise the runtime, starting up all the initial worker
      * threads which will be ready to accept new tasks
@@ -49,6 +56,30 @@ public class LoomRuntime
         // Start the worker threads
         for (Thread worker : workers)
             worker.start();
+    }
+
+    /**
+     * Submit the root task to the work queue
+     * @param root - root task to add
+     */
+    public void submitRoot(Task root)
+    {
+        this.root = root;
+        tasks.offer(root);
+        tasks.notifyAll();
+
+        // This will always succeed, since no other thread currently
+        // accesses the semaphore -- the blocking acquire() call is not needed
+        sem.tryAcquire();
+    }
+
+    /**
+     * Wait until the root task completes
+     * @throws InterruptedException - if the semaphore acquire is interrupted
+     */
+    public void waitOnRoot() throws InterruptedException
+    {
+        sem.acquire();
     }
 
     /**
@@ -109,13 +140,13 @@ public class LoomRuntime
      */
     private boolean workerMainBody()
     {
-        Task curr;
+        Task task;
 
         try
         {
             // Wait until there is a task in the queue -- and remove it
             // from the queue
-            while((curr = tasks.poll()) == null) {
+            while((task = tasks.poll()) == null) {
                 tasks.wait();
             }
         }
@@ -126,16 +157,20 @@ public class LoomRuntime
         }
 
         // Run the task with this worker thread
-        curr.run();
-        TaskStatus status = curr.getStatus();
+        task.run();
+        TaskStatus status = task.getStatus();
 
         if(status == TaskStatus.COMPLETED)
         {
-            Task parent = curr.getParent();
-
-            // Nothing else needs to be done
-            if(parent == null)
+            // The root task has now completed
+            // Release the semaphore -- which will cause the waitOnRoot() call to return
+            if(task == root)
+            {
+                sem.release();
                 return true;
+            }
+
+            Task parent = task.getParent();
 
             // TODO: is this even a valid state?
             //  This implies that the parent is not waiting on its child to complete
@@ -158,7 +193,7 @@ public class LoomRuntime
 
         // Add the task to the waiting set
         if(status == TaskStatus.WAITING) {
-            waiting.put(curr, curr);
+            waiting.put(task, task);
             return true;
         }
 

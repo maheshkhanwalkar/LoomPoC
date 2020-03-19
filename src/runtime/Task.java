@@ -12,7 +12,7 @@ public class Task
     private TaskStatus status;
 
     // Any subtasks that this task depends on
-    private Queue<Task> subTasks = new ConcurrentLinkedQueue<>();
+    private Queue<Task> children = new ConcurrentLinkedQueue<>();
 
     // The parent task (if it exists)
     private Task parent;
@@ -60,34 +60,24 @@ public class Task
     public void updateStatus()
     {
         // Ensure all the subtasks have completed
-        for(Task child : subTasks)
+        for(Task child : children)
         {
             if(child.status != TaskStatus.COMPLETED)
                 return;
         }
 
-        // Every subtask has completed, so the parent task can now be
-        // rescheduled to run
+        // Every subtask has completed, so reschedule the parent task
         status = TaskStatus.READY;
     }
 
     /**
-     * Creates a child task, adding it to its internal subtask list
-     * @param childBody - continuation body of the child
-     * @param waitImmediately - should the task begin waiting immediately
-     * @return the child
+     * Add a child task to this task's internal subtask list
+     * @param child - task to add
      */
-    public Task createChild(Continuation childBody, boolean waitImmediately)
+    public void addChild(Task child)
     {
-        if(waitImmediately) {
-            status = TaskStatus.WAITING;
-        }
-
-        Task child = new Task(childBody);
         child.parent = this;
-
-        subTasks.add(child);
-        return child;
+        this.children.add(child);
     }
 
     /**
