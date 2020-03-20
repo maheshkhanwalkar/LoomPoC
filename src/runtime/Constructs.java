@@ -46,7 +46,6 @@ package runtime;
 public class Constructs
 {
     private static LoomRuntime runtime;
-    private static final ContinuationScope SCOPE = new ContinuationScope("SCOPE");
 
     /**
      * Launch a new "application" to run on the runtime framework
@@ -60,10 +59,7 @@ public class Constructs
             return;
 
         runtime = new LoomRuntime();
-
-        Task task = new Task(new Continuation(SCOPE, body));
-
-        runtime.submitRoot(task);
+        runtime.submitRoot(body);
         runtime.waitOnRoot();
         runtime.shutdown();
     }
@@ -77,54 +73,29 @@ public class Constructs
      * The 'body' specified will be wrapped within a new task and will
      * be scheduled to execute independently.
      *
-     * One important point is that async {...} is always implicitly under
-     * a finish scope. The following example illustrates this rule:
-     *
-     * Paradigm #1
-     * async {
-     *     async {
-     *         [1]
-     *     }
-     *
-     *     [2]
-     * }
-     *
-     * Paradigm #2
-     * async {
-     *     finish {
-     *         async {
-     *            [1]
-     *         }
-     *
-     *         [2]
-     *     }
-     * }
-     *
-     * The implementation here treats Paradigm #1 and #2 as the same. This
-     * essentially simplifies task management, since parent tasks must always wait
-     * on their children to complete.
-     *
-     * Therefore, to truly represent Paradigm #1 with the current implementation,
-     * the innermost async task should be (manually) hoisted out:
-     *
-     * Paradigm #3
-     *
-     * async {
-     *     [2]
-     * }
-     *
-     * async {
-     *     [1]
-     * }
-     *
-     * This allows for the two async constructs to complete independently of each other,
-     * without any waiting on each other.
-     *
      * @param body - body of the async task
      */
     public static void async(Runnable body)
     {
-        Task async = new Task(new Continuation(SCOPE, body));
-        runtime.setupAsync(async);
+        runtime.setupAsync(body);
+    }
+
+    /**
+     * Define a finish scope encapsulating the body
+     *
+     * This call should only be called within the launchApp {...} scope, since it
+     * requires the Loom Runtime to be initialised.
+     *
+     * All instructions execute sequentially within the body, except for async { ... }
+     * calls, which will spawn independent tasks to execute alongside the original thread.
+     *
+     * However, once the finish { ... } body is done, it will wait on any outstanding async
+     * calls which still need to complete.
+     *
+     * @param body - encapsulated body within the finish
+     */
+    public static void finish(Runnable body)
+    {
+       runtime.setupFinish(body);
     }
 }

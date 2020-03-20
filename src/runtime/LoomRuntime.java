@@ -27,9 +27,6 @@ public class LoomRuntime
     // Task queue (ready-to-run)
     private BlockingQueue<Task> tasks = new LinkedBlockingQueue<>();
 
-    // Waiting task set (self-map --> set)
-    private Map<Task, Task> waiting = new ConcurrentHashMap<>();
-
     // Current task map
     private Map<Long, Task> current = new ConcurrentHashMap<>();
 
@@ -38,6 +35,7 @@ public class LoomRuntime
 
     // The initial task submitted
     private Task root;
+    private ContinuationScope scope = new ContinuationScope("loom-runtime-scope");
 
     // Countdown latch -- used to wait until the root task is done
     private CountDownLatch latch = new CountDownLatch(1);
@@ -61,11 +59,13 @@ public class LoomRuntime
 
     /**
      * Submit the root task to the work queue
-     * @param root - root task to add
+     * @param body - body of the root task to add
      */
-    public void submitRoot(Task root)
+    public void submitRoot(Runnable body)
     {
-        this.root = root;
+        Continuation cont = new Continuation(scope, () -> Constructs.finish(body));
+
+        root = new Task(cont);
         tasks.offer(root);
     }
 
@@ -88,15 +88,48 @@ public class LoomRuntime
      * parent does not directly wait on the spawned async until it reaches the
      * end of a finish scope (implicitly or explicitly)
      *
-     * @param child - async subtask to setup
+     * @param body - async subtask to setup
      */
-    public void setupAsync(Task child)
+    public void setupAsync(Runnable body)
     {
+        Task child = new Task(new Continuation(scope, body));
+
         long tid = Thread.currentThread().getId();
         Task parent = current.get(tid);
 
         parent.addChild(child);
         tasks.offer(child);
+    }
+
+    /**
+     * Setup the finish scope for this task
+     *
+     * The current task will enter a new finish scope, which is
+     * done by pushing itself onto the finish stack.
+     *
+     * Any new async tasks that will be spawned will point to this task as
+     * the finish scope that they reside in.
+     *
+     * @param body - body to encapsulate
+     */
+    public void setupFinish(Runnable body)
+    {
+        long tid = Thread.currentThread().getId();
+        Task curr = current.get(tid);
+
+        curr.finish.push(curr);
+        body.run();
+        curr.finish.pop();
+
+        // Don't need to yield at all
+        if(curr.count.get() == 0) {
+            return;
+        }
+
+        // Yield until all the child async tasks have finished
+        // Then, this continuation will be re-entered
+        curr.status = TaskStatus.WAITING;
+        Continuation.yield(scope);
     }
 
     /**
@@ -152,8 +185,8 @@ public class LoomRuntime
         try
         {
             // Take a task from the queue
-            //  Since this is a blocking queue, the call will *block* until the queue
-            //  becomes non-empty
+            // Since this is a blocking queue, the call will *block* until the queue
+            // becomes non-empty
             task = tasks.take();
         }
         catch (InterruptedException e)
@@ -167,44 +200,34 @@ public class LoomRuntime
 
         // Run the task with this worker thread
         task.run();
-        TaskStatus status = task.getStatus();
+        TaskStatus status = task.status;
 
         current.remove(tid);
 
         if(status == TaskStatus.COMPLETED)
         {
-            // The root task has now completed
-            // Decrement the latch's count -- which will cause the waitOnRoot() call to return
-            if(task == root)
+            Task finish;
+
+            if(task == root || task == (finish = task.finish.peek()))
             {
-                latch.countDown();
-                return true;
+                if(task.count.get() == 0) {
+                    latch.countDown();
+                    return true;
+                }
+
+                task.status = TaskStatus.WAITING;
+                Continuation.yield(scope);
+            }
+            else
+            {
+                int count = finish.count.decrementAndGet();
+
+                if(count == 0 && finish.status == TaskStatus.WAITING) {
+                    finish.status = TaskStatus.READY;
+                    tasks.offer(finish);
+                }
             }
 
-            Task parent = task.getParent();
-
-            // TODO: is this even a valid state?
-            //  This implies that the parent is not waiting on its child to complete
-            //  which should only happen if an async contains another async, but does not
-            //  wrap the inner async inside of a finish
-            if(!waiting.containsKey(parent))
-                return true;
-
-            parent.updateStatus();
-            TaskStatus pStatus = parent.getStatus();
-
-            // Schedule the parent task
-            if(pStatus == TaskStatus.READY) {
-                waiting.remove(parent);
-                tasks.offer(parent);
-            }
-
-            return true;
-        }
-
-        // Add the task to the waiting set
-        if(status == TaskStatus.WAITING) {
-            waiting.put(task, task);
             return true;
         }
 

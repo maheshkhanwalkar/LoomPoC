@@ -1,21 +1,21 @@
 package runtime;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Stack;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Task
 {
     // Underlying task representation
-    private Continuation body;
+    public Continuation body;
 
     // The current status of the task
-    private TaskStatus status;
+    public volatile TaskStatus status;
 
     // Any subtasks that this task depends on
-    private Queue<Task> children = new ConcurrentLinkedQueue<>();
+    public AtomicInteger count = new AtomicInteger();
 
-    // The parent task (if it exists)
-    private Task parent;
+    // Finish scope
+    public Stack<Task> finish = new Stack<>();
 
     /**
      * Initialise a task
@@ -52,58 +52,12 @@ public class Task
     }
 
     /**
-     * Update the task's status
-     *
-     * The task only becomes ready again once all of its children have finished.
-     * Therefore, this method should be called whenever a child task has a status update.
-     */
-    public void updateStatus()
-    {
-        // Ensure all the subtasks have completed
-        for(Task child : children)
-        {
-            if(child.status != TaskStatus.COMPLETED)
-                return;
-        }
-
-        // Every subtask has completed, so reschedule the parent task
-        status = TaskStatus.READY;
-    }
-
-    /**
-     * Add a child task to this task's internal subtask list
+     * Add a child task and register it with the current finish scope
      * @param child - task to add
      */
     public void addChild(Task child)
     {
-        child.parent = this;
-        this.children.add(child);
-    }
-
-    /**
-     * Set the task's status
-     * @param status - new status
-     */
-    public void setStatus(TaskStatus status)
-    {
-        this.status = status;
-    }
-
-    /**
-     * Get the current status of the task
-     * @return the status
-     */
-    public TaskStatus getStatus()
-    {
-        return status;
-    }
-
-    /**
-     * Get the task's parent (if it exists)
-     * @return the parent, or null if it doesn't exist
-     */
-    public Task getParent()
-    {
-        return parent;
+        child.finish.push(finish.peek());
+        finish.peek().count.incrementAndGet();
     }
 }
