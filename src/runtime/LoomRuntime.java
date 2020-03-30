@@ -121,14 +121,8 @@ public class LoomRuntime
         body.run();
         curr.finish.pop();
 
-        // Don't need to yield at all
-        if(curr.count.get() == 0) {
-            return;
-        }
-
         // Yield until all the child async tasks have finished
         // Then, this continuation will be re-entered
-        curr.status = TaskStatus.WAITING;
         Continuation.yield(scope);
     }
 
@@ -204,6 +198,16 @@ public class LoomRuntime
 
         current.remove(tid);
 
+        if(status == TaskStatus.WAITING)
+        {
+            if(task.count.get() == 0) {
+                task.status = TaskStatus.READY;
+                tasks.offer(task);
+
+                return true;
+            }
+        }
+
         if(status == TaskStatus.COMPLETED)
         {
             Task finish;
@@ -215,7 +219,6 @@ public class LoomRuntime
                     return true;
                 }
 
-                task.status = TaskStatus.WAITING;
                 Continuation.yield(scope);
             }
             else
