@@ -1,10 +1,86 @@
 \documentclass[12pt]{article}
 \usepackage{amsmath,amssymb,amsthm, minted, hyperref, enumerate, graphics, graphicx}
 \usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Java,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3
+}
 
 \title{Loom Proof of Concept}
 \author{Mahesh Khanwalkar}
+\date{}
 
 \begin{document}
     \maketitle
+    \section{Introduction}
+
+    Project Loom is an effort to add scoped, one-shot delimited continuations to Java, along with the
+    necessary runtime support within the JVM. Third-party implementations of delimited continuations, like
+    Kilim required an explicit, after-compilation weaving process; however, this is not necessary within
+    Loom.
+
+    \subsection{Basic API}
+
+    The way of creating continuations is through the aptly-named Continuation class, which encapsulates a
+    Runnable target. The continuation can be started for the first time using a call to the run method:
+
+    \begin{lstlisting}
+    // Runnable body is wrapped within the continuation
+    Continuation cont = new Continuation(body); 
+    cont.run();
+    \end{lstlisting}
+
+    This call performs all the necessary setup required, which includes the support for handling yielding.
+    Within the Runnable body, the continuation can be yielded using a static call to Continuation.yield,
+    which will cause the call to run to return. However, the same condition is true when the continuation
+    simplify finishes. Therefore, it is up to the caller to check whether the continuation actually finished.
+    It is up to the user of the continuation to resume it, which can be done using the same run call.
+
+    \begin{lstlisting}
+    if(cont.isDone()) {
+        // The continuation has finished
+    } else {
+        // The continuation has yielded (suspended)
+        // Calling run will resume right after the point of suspension.
+        cont.run();
+    }
+    \end{lstlisting}
+
+    \subsection{Limitations}
+    The API is still currently under active development, so there are still some limitations. The only
+    exposed state of a continuation is whether it is done or not. There is no way to tell from another thread
+    that the continuation has yielded.
+
+    The documentation mentions a Fiber class, which would manage the scheduling of continuations and states
+    that continuations are not necessarily meant to be used directly, since they are quite low-level.
+    However, there seems to be a gap between the documentation and the current state of the code base. 
+
+    There was a Fiber class in an earlier build, but it was marked package private, so it is quite likely
+    that it was not supposed to be used directly. In addition, in newer builds, it looks like the class has
+    been removed completely. The only public, relatively-stable interface is the Continuation class. 
+
+    Since Project Loom is under active development, it is natural that there are still many bugs. JVM crashes
+    do occur occasionally, so some of the runtime support does seem to have some issues that need to be
+    resolved. Debugging also occasionally causes the JVM to crash as well which is not ideal. However, for
+    the most part, the current state of Loom is stable enough and feature-ready enough to be used to
+    implement higher level parallelism constructs.
 \end{document}
