@@ -83,4 +83,29 @@
     resolved. Debugging also occasionally causes the JVM to crash as well which is not ideal. However, for
     the most part, the current state of Loom is stable enough and feature-ready enough to be used to
     implement higher level parallelism constructs.
+
+    \section{Objective}
+
+    The main objective of this proof-of-concept is to demonstrate how to implement certain high level
+    parallelism constructs with the features provided in Loom. This implementation was done from the ground
+    up to allow for design flexibility and faster completion than trying to migrate parts of the existing
+    Habanero Java library. While the end goal is to do this migration, this project acts as a logic stepping
+    stone, hopefully guiding the effort through the initial stages.
+
+    The two high level parallelism constructs that were chosen were \textbf{async} and \textbf{finish}, which
+    are arguably the most fundamental. Many other constructs, like parallel for, can be built on top of these
+    so it makes sense to start here. Both the runtime design and the library interface were designed to be
+    similar to the original HJ library implementation. Functional interfaces and lambdas, just like with the
+    original HJLib, were employed to mimic the construct style used by X10 and the Habanero Java language.
+
+    This objective was achieved -- both \textbf{async} and \textbf{finish} were fully implemented and tested
+    with simple examples. The details of the runtime implementation, continuation setup, and other important
+    information is layed out within the next couple sections. There are still some small issues with the
+    current source; however, those are runtime related: the constructs are working as expected. 
+
+    Lastly, the code itself has been documented extensively. Since the end goal of this proof-of-concept is
+    to serve as a starting point for a larger migration effort, adequate documentation would be very helpful.
+    Both the runtime and construct aspects have lengthy javadocs that explain everything in detail. Debugging
+    the components is also relatively straightforward, although the issues with continuation debugging do
+    occasionally make things complicated. This will ideally be resolved as Loom matures with time.
 \end{document}
