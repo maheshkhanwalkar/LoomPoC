@@ -38,7 +38,7 @@
     Kilim required an explicit, after-compilation weaving process; however, this is not necessary within
     Loom.
 
-    \subsection{Basic API}
+    \subsection{Loom API}
 
     The way of creating continuations is through the aptly-named Continuation class, which encapsulates a
     Runnable target. The continuation can be started for the first time using a call to the run method:
@@ -84,7 +84,7 @@
     the most part, the current state of Loom is stable enough and feature-ready enough to be used to
     implement higher level parallelism constructs.
 
-    \section{Objective}
+    \section{Purpose}
 
     The main objective of this proof-of-concept is to demonstrate how to implement certain high level
     parallelism constructs with the features provided in Loom. This implementation was done from the ground
@@ -107,5 +107,57 @@
     to serve as a starting point for a larger migration effort, adequate documentation would be very helpful.
     Both the runtime and construct aspects have lengthy javadocs that explain everything in detail. Debugging
     the components is also relatively straightforward, although the issues with continuation debugging do
-    occasionally make things complicated. This will ideally be resolved as Loom matures with time.
+    occasionally make things complicated. However, this will ideally be resolved as Project Loom matures with
+    time.
+
+    \section{Design Process}
+
+    The project was split into two logically-separate units: constructs and runtime support. The constructs
+    define the \textbf{async} and \textbf{finish} methods while the runtime support implements all the task
+    management and scheduling internals.
+
+    \subsection{Constructs}
+
+    The constructs were defined within a Construct class which contains static methods. In addition to the
+    \textbf{async} and \textbf{finish} methods, there is also a \textbf{launchApp} method. This is used to
+    enter a scope where the runtime is active and ready to accept tasks. Once control returns from this
+    method, the runtime automatically waits on any remaining tasks and then shuts down, freeing up any
+    resources that were allocated.
+
+    Since the runtime is only active within the \textbf{launchApp} scope, it follows that the high-level
+    parallelism constructs must be called within this scope. The following code snippet demonstrates how this
+    would look like:
+
+    \begin{lstlisting}
+        launchApp(() -> myJob());
+        ...
+        public void myJob()
+        {
+            finish(() -> {
+                System.out.println("Task #1");
+                async(() -> {
+                    System.out.println("Task #2");
+                });
+            });
+        }
+    \end{lstlisting}
+
+    The myJob method encapsulates a single job which is made up of two tasks. The task creation and
+    management is all handled by the runtime, since this method is passed to the launchApp method. It is also
+    possible to directly provide the body of myJob to launchApp, as shown below:
+
+    \begin{lstlisting}
+        launchApp(() -> {
+            finish(() -> {
+                System.out.println("Task #1");
+                async(() -> {
+                    System.out.println("Task #2");
+                });
+            });
+        });
+    \end{lstlisting}
+
+    For very small code snippets, this makes sense. However, for the most part, it is best to encapsulate the
+    job into its own method. There are no restrictions when it comes to the method composition of the job:
+    control can freely enter and return from as many methods as so desired (constrained by stack limits)
 \end{document}
