@@ -160,4 +160,92 @@
     For very small code snippets, this makes sense. However, for the most part, it is best to encapsulate the
     job into its own method. There are no restrictions when it comes to the method composition of the job:
     control can freely enter and return from as many methods as so desired (constrained by stack limits)
+
+    \subsection{Runtime}
+
+    The runtime is where all of the actual task management work happens. The constructs merely act as a
+    convenient wrapper which calls into the runtime for all of its needs. 
+
+    \subsubsection{Construct Implementation}
+
+    \begin{lstlisting}
+    /**
+     * Launch a new "application" to run on the runtime framework
+     * @param body - root body of the task
+     * @throws InterruptedException - if the wait-to-finish is interrupted
+     */
+    public static void launchApp(Runnable body) throws InterruptedException
+    {
+        // Only one runtime can be launched at a time
+        if(runtime != null)
+            return;
+
+        runtime = new LoomRuntime();
+        runtime.submitRoot(body);
+        runtime.waitOnRoot();
+        runtime.shutdown();
+    }
+    \end{lstlisting}
+
+    As described earlier, the launchApp method will initialise the runtime and submit the provided body as
+    the root task. Therefore, all jobs start out with a single task, but have the option of creating new ones
+    via the \textbf{async} construct. Once the root task has been submitted, the method waits until the
+    runtime indicates that this task and all its children have completed.
+
+    It is important to note that the root task has an implicit finish scope. That is, the root task cannot
+    be considered complete until all of its child tasks have also completed. Therefore, regardless of whether
+    there is a call to finish with the runnable body, then runtime ensures that this implicit finish behaviour
+    is preserved.
+
+    Another important note is that the Construct API only directly deals with Runnable. The continuations are
+    only seen within the runtime itself. This is due to the fact that there is no weaving process -- support
+    for continuations is at a JVM level. Therefore, there is no need for special interfaces or annotations
+    to indicate which methods need to be weaved after compilation. 
+
+    The implementations for \textbf{async} and \textbf{finish} are even simpler, since they directly call the
+    runtime without any additional work:
+
+    \begin{lstlisting}
+    /**
+     * Spawn an async task to execute the body
+     *
+     * This call should only be executed within the launchApp { ... }
+     * scope, since the Loom Runtime needs to be initialised.
+     *
+     * The 'body' specified will be wrapped within a new task and will
+     * be scheduled to execute independently.
+     *
+     * @param body - body of the async task
+     */
+    public static void async(Runnable body)
+    {
+        runtime.setupAsync(body);
+    }
+
+    /**
+     * Define a finish scope encapsulating the body
+     *
+     * This call should only be called within the launchApp {...} scope, since it
+     * requires the Loom Runtime to be initialised.
+     *
+     * All instructions execute sequentially within the body, except for 
+     * async {...} calls, which will spawn independent tasks to execute alongside
+     * the original thread. 
+     *
+     * However, once the finish { ... } body is done, it will wait on any 
+     * outstanding async calls which still need to complete.
+     *
+     * @param body - encapsulated body within the finish
+     */
+    public static void finish(Runnable body)
+    {
+       runtime.setupFinish(body);
+    }
+    \end{lstlisting}
+
+    Once again, there is no mention of Continuations or even tasks. This has all been encapsulated within the
+    runtime itself. The included javadocs explain the behaviour of the \textbf{async} and \textbf{finish}
+    constructs. However, the actual details of what is going on is within the runtime itself. That is where
+    the finish scope handling and task spawning takes place. The details of this are explored within the next
+    subsection.
 \end{document}
