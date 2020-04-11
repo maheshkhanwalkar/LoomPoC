@@ -248,4 +248,148 @@
     constructs. However, the actual details of what is going on is within the runtime itself. That is where
     the finish scope handling and task spawning takes place. The details of this are explored within the next
     subsection.
+
+    \subsubsection{Runtime Implementation}
+
+    The runtime itself is conceptually separated into two components: thread management and task management.
+    The thread management portion handles the thread creation and task scheduling aspects of the runtime. The
+    task management portion handles the creation and monitoring of tasks within the runtime. These portions
+    are only conceptually separate -- in the code itself both portions go hand-in-hand to make everything
+    work.
+
+    Since the thread management aspect of this project is not particularly important, the design was kept
+    relatively simple. When the runtime is initialised, a fixed number of worker threads are started up. The
+    number of worker threads will not change throughout the course of the job execution.
+
+    There is a single task queue which is shared amongst all the worker threads. This is a simpler model to
+    work with that a queue-per-worker with work stealing approach. The worker threads wait until there are
+    tasks ready and will pull them off the queue. The worker executes its task and performs any necessary
+    cleanup depending on the current state. Finally, the worker once again checks the task queue for any
+    additional work to perform, blocking otherwise.
+
+    The actually interesting and relevant detail is how the continuations are managed and the design of the
+    async and finish constructs. When the root task is submitted to the runtime framework, a small amount of
+    initialisation work is done:
+
+    \begin{lstlisting}
+    /**
+     * Submit the root task to the work queue
+     * @param body - body of the root task to add
+     */
+    public void submitRoot(Runnable body)
+    {
+        Continuation cont = new Continuation(scope, () -> Constructs.finish(body));
+
+        root = new Task(cont);
+        tasks.offer(root);
+    }
+    \end{lstlisting}
+
+    The body of the root task is wrapped within a Continuation. The Loom API defines continuation scopes and
+    nested continuations, but those features are not used here. Every continuation that is created by the
+    runtime belongs to and yields to the same scope. An important point to highlight is that the body is also
+    wrapped within a finish scope before it is encapsulated within the continuation. This ensures that any
+    async tasks are properly waited on, even if there is no explicit global finish scope defined by the
+    library user. Hence, the root task always becomes the last task to complete, which means its completion
+    can be used to signal that it is safe to shutdown the runtime.
+
+    The Task class acts as a thin wrapper over the underlying continuation. It handles information about the
+    status of the task, child tasks within its finish scope, and the finish scope task. One point of future
+    improvement is to potentially move some of the task dependency management into its own class -- similar
+    to the EDC design description.
+
+    The following code snippet details the runtime support needed for the async construct:
+
+    \begin{lstlisting}
+    /**
+     * Setup the provided task as an async construct
+     *
+     * The async subtask will be associated with the currently executing
+     * parent task and will be added to the work queue.
+     *
+     * The parent task will then be returned to immediately, since the
+     * parent does not directly wait on the spawned async until it reaches the
+     * end of a finish scope (implicitly or explicitly)
+     *
+     * @param body - async subtask to setup
+     */
+    public void setupAsync(Runnable body)
+    {
+        Task child = new Task(new Continuation(scope, body));
+
+        long tid = Thread.currentThread().getId();
+        Task parent = current.get(tid);
+
+        parent.addChild(child);
+        tasks.offer(child);
+    }
+    \end{lstlisting}
+
+    The body of the async is wrapped within its own (non-nested) continuation, which is then wrapped into
+    a new task. There is a bit of bookkeeping work performed: the async task belongs to some finish scope,
+    so the task that the scope was entered in needs to be informed of a new task. The addChild method
+    increments an atomic counter for the finish scope task. When one of these child tasks complete, this
+    counter is then decremented. Only when the counter goes to 0 is the finish scope task allowed to
+    complete.
+
+    The implementation of the finish construct has a bit more going on:
+
+    \begin{lstlisting}
+    /**
+     * Setup the finish scope for this task
+     *
+     * The current task will enter a new finish scope, which is
+     * done by pushing itself onto the finish stack.
+     *
+     * Any new async tasks that will be spawned will point to this task as
+     * the finish scope that they reside in.
+     *
+     * @param body - body to encapsulate
+     */
+    public void setupFinish(Runnable body)
+    {
+        long tid = Thread.currentThread().getId();
+        Task curr = current.get(tid);
+
+        curr.finish.push(curr);
+        body.run();
+        curr.finish.pop();
+
+        // Yield until all the child async tasks have finished
+        // Then, this continuation will be re-entered
+        Continuation.yield(scope);
+    }
+    \end{lstlisting}
+
+    Before the body of the finish is run, the current finish scope is pushed onto the finish stack. That
+    means any async tasks generated within the body of the finish will be associated with this scope. The
+    only way that changes is if any one of those async tasks reside within another finish scope within this
+    finish scope. In addition, once the body finishes, the finish scope is popped off -- any new async tasks
+    will then be associated with the previous finish scope instead of this one. 
+
+    The call to Continuation.yield, as described earlier, will yield the continuation, causing the original
+    call to run to return. The runtime does some additional bookkeeping work to determine how to handle the
+    suspending task. If there are no child tasks remaining -- or none to begin with, then the suspended task
+    can simply be marked as done. Otherwise, the task is treated as suspended and will only be resumed once
+    the task count atomic goes to 0.
+
+    Finally, a simple countdown latch is used to signal to the launchApp function that all the tasks have
+    completed. As seen earlier in the implementation of launchApp, it makes a call to the runtime to wait
+    on the root task. This has been implemented simply by:
+
+    \begin{lstlisting}
+    /**
+     * Wait until the root task completes
+     * @throws InterruptedException - if the latch await is interrupted
+     */
+    public void waitOnRoot() throws InterruptedException
+    {
+        latch.await();
+    }
+    \end{lstlisting}
+
+    The latch starts off with value 1 and this is decremented once the root task has completed, which will
+    wake up the await call. Once waitOnRoot returns, the launchApp method will then instruct the runtime to
+    shutdown. The runtime shutdown will instruct the worker threads to stop waiting for new tasks and simply
+    quit, allowing them to be joined upon. That completes the entire runtime lifecycle.
 \end{document}
