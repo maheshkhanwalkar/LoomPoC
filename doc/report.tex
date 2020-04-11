@@ -392,4 +392,36 @@
     wake up the await call. Once waitOnRoot returns, the launchApp method will then instruct the runtime to
     shutdown. The runtime shutdown will instruct the worker threads to stop waiting for new tasks and simply
     quit, allowing them to be joined upon. That completes the entire runtime lifecycle.
+
+    \section{Future Work}
+
+    The current implementation shows that it is very possible to implement these high-level constructs with
+    the primitives provided by the Loom API. While there are still some unknowns with the fact that Loom is
+    still under active development and what will remain from build-to-build is not certain. However, it seems
+    reasonable that building off of Continuations is safe enough. There are still some things to be desired,
+    like better state information about a continuation, but these may be added in the future.
+
+    The main starting point in porting the Habanero Java library to using Loom instead of Kilim would be at
+    the HjSuspendable class and the Kilim Fiber class. Since Kilim requires a weaving step to inject the
+    required low-level steps to implement suspending and resuming, methods needs to be explicitly
+    ``annotated'' using a throws SuspendableException signature. This is not the case with Loom, since
+    continuations are supported within the JVM itself. Therefore, the only requirement is that the
+    suspendable portion be wrapped within a continuation.
+
+    The Kilim fiber class does not have a direct equivalent in Loom, at least not in the current build that
+    this proof-of-concept was built against. While there is documentation to say that Loom has a Fiber class,
+    no such class exists. Therefore, all of the scheduling work still needs to be done with Loom to manage
+    the lifecycle of a particular continuation.
+
+    Exception handling is another interesting point to consider. I have not looked at how exceptions are
+    handled within Loom continuations. Therefore, one place of investigation is seeing how to capture
+    exceptions within async tasks and process them within the finish scope, since this is behaviour described
+    within the javadoc for the finish construct within Habanero Java Library implementation. 
+
+    Overall, this proof of concept was productive in getting a feel for the capabilities, strengths, and
+    weaknesses of the Loom API and getting an initial gauge of the difficulty in porting the Habanero Java
+    Library to it. Many parts of this PoC were designed to mimic the implementation in HJ, so a good portion
+    of the continuation handling code should be transferable to the actual library implementation once the
+    transition effort to using Loom starts.
+
 \end{document}
